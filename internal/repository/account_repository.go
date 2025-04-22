@@ -124,3 +124,42 @@ func (r *AccountRepository) CreateTransaction(transaction *models.Transaction) e
 		transaction.CreatedAt,
 	).Scan(&transaction.ID)
 }
+
+// GetTransactions retrieves transactions for an account within a date range
+func (r *AccountRepository) GetTransactions(accountID int64, startDate, endDate time.Time) ([]*models.Transaction, error) {
+	query := `
+		SELECT id, from_account_id, to_account_id, amount, type, created_at
+		FROM transactions
+		WHERE (from_account_id = $1 OR to_account_id = $1)
+		AND created_at >= $2
+		AND created_at <= $3
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(query, accountID, startDate, endDate)
+	if err != nil {
+		r.logger.WithError(err).Error("Failed to get transactions")
+		return nil, err
+	}
+	defer rows.Close()
+
+	var transactions []*models.Transaction
+	for rows.Next() {
+		tx := &models.Transaction{}
+		err := rows.Scan(
+			&tx.ID,
+			&tx.FromAccountID,
+			&tx.ToAccountID,
+			&tx.Amount,
+			&tx.Type,
+			&tx.CreatedAt,
+		)
+		if err != nil {
+			r.logger.WithError(err).Error("Failed to scan transaction")
+			return nil, err
+		}
+		transactions = append(transactions, tx)
+	}
+
+	return transactions, nil
+}
