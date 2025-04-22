@@ -12,32 +12,22 @@ import (
 
 type AccountService struct {
 	accountRepo *repository.AccountRepository
+	creditRepo  *repository.CreditRepository
 	logger      *logrus.Logger
 }
 
 func NewAccountService(logger *logrus.Logger) *AccountService {
 	return &AccountService{
 		accountRepo: repository.NewAccountRepository(),
+		creditRepo:  repository.NewCreditRepository(),
 		logger:      logger,
 	}
 }
 
-type CreateAccountRequest struct {
-	UserID   int64  `json:"user_id" validate:"required"`
-	Currency string `json:"currency" validate:"required,len=3"`
-}
-
-type TransferRequest struct {
-	FromAccountID int64   `json:"from_account_id" validate:"required"`
-	ToAccountID   int64   `json:"to_account_id" validate:"required"`
-	Amount        float64 `json:"amount" validate:"required,gt=0"`
-	Description   string  `json:"description"`
-}
-
-func (s *AccountService) CreateAccount(req *CreateAccountRequest) (*models.Account, error) {
+func (s *AccountService) CreateAccount(req *models.CreateAccountRequest) (*models.Account, error) {
 	account := &models.Account{
 		UserID:    req.UserID,
-		Balance:   0,
+		Balance:   req.Balance,
 		Currency:  req.Currency,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -71,7 +61,7 @@ func (s *AccountService) GetUserAccounts(userID int64) ([]*models.Account, error
 	return accounts, nil
 }
 
-func (s *AccountService) Transfer(req *TransferRequest) error {
+func (s *AccountService) Transfer(req *models.TransferRequest) error {
 	// Start a database transaction
 	tx, err := s.accountRepo.BeginTransaction()
 	if err != nil {
@@ -117,13 +107,11 @@ func (s *AccountService) Transfer(req *TransferRequest) error {
 
 	// Create transaction record
 	transaction := &models.Transaction{
-		FromAccountID:   req.FromAccountID,
-		ToAccountID:     req.ToAccountID,
-		Amount:          req.Amount,
-		Currency:        srcAccount.Currency,
-		Description:     req.Description,
-		TransactionType: "transfer",
-		CreatedAt:       time.Now(),
+		FromAccountID: req.FromAccountID,
+		ToAccountID:   req.ToAccountID,
+		Amount:        req.Amount,
+		Type:          "transfer",
+		CreatedAt:     time.Now(),
 	}
 
 	if err := s.accountRepo.CreateTransaction(transaction); err != nil {
@@ -153,12 +141,10 @@ func (s *AccountService) Deposit(accountID int64, amount float64) error {
 
 	// Create transaction record
 	transaction := &models.Transaction{
-		ToAccountID:     accountID,
-		Amount:          amount,
-		Currency:        account.Currency,
-		Description:     "Deposit",
-		TransactionType: "DEPOSIT",
-		CreatedAt:       time.Now(),
+		ToAccountID: accountID,
+		Amount:      amount,
+		Type:        "deposit",
+		CreatedAt:   time.Now(),
 	}
 
 	if err := s.accountRepo.CreateTransaction(transaction); err != nil {
@@ -188,17 +174,133 @@ func (s *AccountService) Withdraw(accountID int64, amount float64) error {
 
 	// Create transaction record
 	transaction := &models.Transaction{
-		FromAccountID:   accountID,
-		Amount:          amount,
-		Currency:        account.Currency,
-		Description:     "Withdrawal",
-		TransactionType: "WITHDRAWAL",
-		CreatedAt:       time.Now(),
+		FromAccountID: accountID,
+		Amount:        amount,
+		Type:          "withdrawal",
+		CreatedAt:     time.Now(),
 	}
 
 	if err := s.accountRepo.CreateTransaction(transaction); err != nil {
 		s.logger.WithError(err).Error("Failed to create transaction record")
 		return errors.New("internal server error")
+	}
+
+	return nil
+}
+
+// Credit-related methods
+
+func (s *AccountService) CreateCredit(req *models.CreateCreditRequest) (*models.Credit, error) {
+	credit := &models.Credit{
+		UserID:          req.UserID,
+		AccountID:       req.AccountID,
+		Amount:          req.Amount,
+		InterestRate:    req.InterestRate,
+		TermMonths:      req.TermMonths,
+		RemainingAmount: req.Amount,
+		Status:          "ACTIVE",
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	if err := s.creditRepo.Create(credit); err != nil {
+		s.logger.WithError(err).Error("Failed to create credit")
+		return nil, errors.New("internal server error")
+	}
+
+	// Generate payment schedule
+	schedule := models.GeneratePaymentSchedule(credit, time.Now())
+	for _, payment := range schedule {
+		payment.CreditID = credit.ID
+		if err := s.creditRepo.CreatePaymentSchedule(payment); err != nil {
+			s.logger.WithError(err).Error("Failed to create payment schedule")
+			return nil, errors.New("internal server error")
+		}
+	}
+
+	return credit, nil
+}
+
+func (s *AccountService) GetCreditByID(creditID int64) (*models.Credit, error) {
+	credit, err := s.creditRepo.GetByID(creditID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get credit by ID")
+		return nil, errors.New("credit not found")
+	}
+	return credit, nil
+}
+
+func (s *AccountService) GetCreditsByUserID(userID int64) ([]*models.Credit, error) {
+	credits, err := s.creditRepo.GetByUserID(userID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get credits by user ID")
+		return nil, errors.New("internal server error")
+	}
+	return credits, nil
+}
+
+func (s *AccountService) PayCredit(creditID int64, amount float64) error {
+	credit, err := s.creditRepo.GetByID(creditID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get credit")
+		return errors.New("credit not found")
+	}
+
+	if credit.Status != "ACTIVE" {
+		return errors.New("credit is not active")
+	}
+
+	if amount <= 0 {
+		return errors.New("payment amount must be greater than zero")
+	}
+
+	if amount > credit.RemainingAmount {
+		return errors.New("payment amount exceeds remaining credit amount")
+	}
+
+	// Start transaction
+	tx, err := s.creditRepo.BeginTransaction()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get next pending payment
+	schedule, err := s.creditRepo.GetPaymentSchedule(creditID)
+	if err != nil {
+		return fmt.Errorf("failed to get payment schedule: %w", err)
+	}
+
+	var nextPayment *models.PaymentSchedule
+	for _, payment := range schedule {
+		if payment.Status == "PENDING" {
+			nextPayment = payment
+			break
+		}
+	}
+
+	if nextPayment == nil {
+		return errors.New("no pending payments found")
+	}
+
+	// Update payment status
+	nextPayment.Status = "PAID"
+	if err := s.creditRepo.UpdatePaymentSchedule(nextPayment); err != nil {
+		return fmt.Errorf("failed to update payment schedule: %w", err)
+	}
+
+	// Calculate new remaining amount and update credit status if needed
+	credit.RemainingAmount -= amount
+	if credit.RemainingAmount == 0 {
+		credit.Status = "COMPLETED"
+		if err := s.creditRepo.Update(credit); err != nil {
+			return fmt.Errorf("failed to update credit: %w", err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
