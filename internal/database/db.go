@@ -3,26 +3,18 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"os"
 
+	"github.com/Abigotado/abi_banking/internal/config"
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 )
 
 var DB *sql.DB
 
-func InitDB(logger *logrus.Logger) error {
-	// Get database configuration from environment variables
-	dbHost := getEnvOrDefault("DB_HOST", "localhost")
-	dbPort := getEnvOrDefault("DB_PORT", "5438")
-	dbUser := getEnvOrDefault("DB_USER", "postgres")
-	dbPassword := getEnvOrDefault("DB_PASSWORD", "postgres")
-	dbName := getEnvOrDefault("DB_NAME", "abi_banking")
-	dbSSLMode := getEnvOrDefault("DB_SSL_MODE", "disable")
-
+func InitDB(cfg *config.Config, logger *logrus.Logger) error {
 	// Construct connection string
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		dbHost, dbPort, dbUser, dbPassword, dbName, dbSSLMode)
+		cfg.DB.Host, cfg.DB.Port, cfg.DB.User, cfg.DB.Password, cfg.DB.Name, cfg.DB.SSLMode)
 
 	// Open database connection
 	var err error
@@ -38,14 +30,6 @@ func InitDB(logger *logrus.Logger) error {
 
 	logger.Info("Successfully connected to database")
 	return nil
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value
 }
 
 func CloseDB() error {
