@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -43,10 +42,10 @@ func main() {
 	}
 	defer database.CloseDB()
 
-	// Create HTTP server
 	// Initialize handlers
 	handlers := handlers.New(cfg, logger)
 
+	// Create HTTP server
 	server := &http.Server{
 		Addr:    ":" + cfg.App.Port,
 		Handler: router.NewRouter(cfg, handlers, logger),
@@ -77,52 +76,4 @@ func main() {
 	}
 
 	logger.Info("Server exiting")
-}
-
-func setupRouter(cfg *config.Config, logger *logrus.Logger) http.Handler {
-	// TODO: Implement router setup with middleware
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Hello, World!")
-	})
-}
-
-// Placeholder handlers - to be implemented
-func registerHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement registration
-}
-
-func loginHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement login
-}
-
-func createAccountHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement account creation
-}
-
-func getAccountHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement account retrieval
-}
-
-func createCardHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement card creation
-}
-
-func getCardHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement card retrieval
-}
-
-func transferHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement money transfer
-}
-
-func createCreditHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement credit creation
-}
-
-func getCreditScheduleHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement credit schedule retrieval
-}
-
-func getAnalyticsHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement analytics
 }
