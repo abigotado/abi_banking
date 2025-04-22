@@ -24,7 +24,7 @@ func NewRouter(
 		middleware.Recovery(logger),
 		middleware.CORS(cfg.API.CORSAllowedOrigins),
 		middleware.RequestID(),
-		middleware.RateLimiter(cfg.RateLimit.Requests),
+		middleware.RateLimiter(cfg.RateLimit.RequestsPerHour),
 		middleware.ContentType("application/json"),
 	)
 

@@ -1,125 +1,165 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
+// Config represents the application configuration
 type Config struct {
-	DB        DBConfig
-	App       AppConfig
-	JWT       JWTConfig
-	Log       LogConfig
-	API       APIConfig
-	Security  SecurityConfig
-	RateLimit RateLimitConfig
+	Server     ServerConfig     `json:"server"`
+	Database   DatabaseConfig   `json:"database"`
+	JWT        JWTConfig        `json:"jwt"`
+	SMTP       SMTPConfig       `json:"smtp"`
+	CBR        CBRConfig        `json:"cbr"`
+	Encryption EncryptionConfig `json:"encryption"`
+	RateLimit  RateLimitConfig  `json:"rate_limit"`
+	API        APIConfig        `json:"api"`
+	Log        LogConfig        `json:"log"`
+	App        AppConfig        `json:"app"`
 }
 
-type DBConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	Name     string
-	SSLMode  string
+// ServerConfig represents server configuration
+type ServerConfig struct {
+	Host         string        `json:"host"`
+	Port         int           `json:"port"`
+	ReadTimeout  time.Duration `json:"read_timeout"`
+	WriteTimeout time.Duration `json:"write_timeout"`
+	IdleTimeout  time.Duration `json:"idle_timeout"`
 }
 
-type AppConfig struct {
-	Port string
-	Env  string
+// DatabaseConfig represents database configuration
+type DatabaseConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	DBName   string `json:"dbname"`
+	SSLMode  string `json:"sslmode"`
 }
 
+// JWTConfig represents JWT configuration
 type JWTConfig struct {
-	Secret     string
-	Expiration time.Duration
+	Secret           string        `json:"secret"`
+	ExpirationTime   time.Duration `json:"expiration_time"`
+	RefreshDuration  time.Duration `json:"refresh_duration"`
+	SigningAlgorithm string        `json:"signing_algorithm"`
 }
 
-type LogConfig struct {
-	Level  string
-	Format string
+// SMTPConfig represents SMTP configuration
+type SMTPConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	From     string `json:"from"`
+	TLS      bool   `json:"tls"`
 }
 
-type APIConfig struct {
-	Prefix             string
-	CORSAllowedOrigins []string
+// CBRConfig represents Central Bank of Russia API configuration
+type CBRConfig struct {
+	BaseURL      string        `json:"base_url"`
+	Timeout      time.Duration `json:"timeout"`
+	RetryCount   int           `json:"retry_count"`
+	RetryDelay   time.Duration `json:"retry_delay"`
+	RateEndpoint string        `json:"rate_endpoint"`
 }
 
-type SecurityConfig struct {
-	PasswordHashCost int
-	SessionTimeout   int
+// EncryptionConfig represents encryption configuration
+type EncryptionConfig struct {
+	CardDataKey     string `json:"card_data_key"`
+	HMACSecret      string `json:"hmac_secret"`
+	PGPPrivateKey   string `json:"pgp_private_key"`
+	PGPPublicKey    string `json:"pgp_public_key"`
+	KeyRotationDays int    `json:"key_rotation_days"`
 }
 
+// RateLimitConfig represents rate limiting configuration
 type RateLimitConfig struct {
-	Requests int
-	Window   int
+	Enabled         bool          `json:"enabled"`
+	RequestsPerHour int           `json:"requests_per_hour"`
+	BurstSize       int           `json:"burst_size"`
+	ExpiryTime      time.Duration `json:"expiry_time"`
 }
 
-func Load() (*Config, error) {
-	// Load JWT expiration duration
-	jwtExpiration, err := time.ParseDuration(getEnvOrDefault("JWT_EXPIRATION", "24h"))
+// APIConfig represents API configuration
+type APIConfig struct {
+	Version            string   `json:"version"`
+	Prefix             string   `json:"prefix"`
+	CORSAllowedOrigins []string `json:"cors_allowed_origins"`
+}
+
+// LogConfig represents logging configuration
+type LogConfig struct {
+	Level string `json:"level"`
+}
+
+// AppConfig represents application configuration
+type AppConfig struct {
+	Port string `json:"port"`
+}
+
+// LoadConfig loads configuration from a JSON file
+func LoadConfig(path string) (*Config, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
-	// Load password hash cost
-	passwordHashCost, err := strconv.Atoi(getEnvOrDefault("PASSWORD_HASH_COST", "10"))
-	if err != nil {
+	config := &Config{}
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(config); err != nil {
 		return nil, err
 	}
 
-	// Load session timeout
-	sessionTimeout, err := strconv.Atoi(getEnvOrDefault("SESSION_TIMEOUT", "3600"))
-	if err != nil {
-		return nil, err
-	}
+	return config, nil
+}
 
-	// Load rate limit config
-	rateLimitRequests, err := strconv.Atoi(getEnvOrDefault("RATE_LIMIT_REQUESTS", "100"))
-	if err != nil {
-		return nil, err
-	}
-
-	rateLimitWindow, err := strconv.Atoi(getEnvOrDefault("RATE_LIMIT_WINDOW", "60"))
-	if err != nil {
-		return nil, err
-	}
-
+// DefaultConfig returns default configuration
+func DefaultConfig() *Config {
 	return &Config{
-		DB: DBConfig{
-			Host:     getEnvOrDefault("DB_HOST", "localhost"),
-			Port:     getEnvOrDefault("DB_PORT", "5438"),
-			User:     getEnvOrDefault("DB_USER", "postgres"),
-			Password: getEnvOrDefault("DB_PASSWORD", "postgres"),
-			Name:     getEnvOrDefault("DB_NAME", "abi_banking"),
-			SSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
+		Server: ServerConfig{
+			Host:         "localhost",
+			Port:         8080,
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
 		},
 		App: AppConfig{
-			Port: getEnvOrDefault("APP_PORT", "8080"),
-			Env:  getEnvOrDefault("APP_ENV", "development"),
+			Port: "8080",
 		},
-		JWT: JWTConfig{
-			Secret:     getEnvOrDefault("JWT_SECRET", ""),
-			Expiration: jwtExpiration,
+		Database: DatabaseConfig{
+			Host:     "localhost",
+			Port:     5432,
+			User:     "postgres",
+			Password: "postgres",
+			DBName:   "bank",
+			SSLMode:  "disable",
 		},
 		Log: LogConfig{
-			Level:  getEnvOrDefault("LOG_LEVEL", "debug"),
-			Format: getEnvOrDefault("LOG_FORMAT", "text"),
+			Level: "info",
 		},
-		API: APIConfig{
-			Prefix:             getEnvOrDefault("API_PREFIX", "/api/v1"),
-			CORSAllowedOrigins: getEnvList("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000", "http://localhost:8080"}),
-		},
-		Security: SecurityConfig{
-			PasswordHashCost: passwordHashCost,
-			SessionTimeout:   sessionTimeout,
+		JWT: JWTConfig{
+			ExpirationTime:   24 * time.Hour,
+			RefreshDuration:  7 * 24 * time.Hour,
+			SigningAlgorithm: "HS256",
 		},
 		RateLimit: RateLimitConfig{
-			Requests: rateLimitRequests,
-			Window:   rateLimitWindow,
+			Enabled:         true,
+			RequestsPerHour: 1000,
+			BurstSize:       50,
+			ExpiryTime:      1 * time.Hour,
 		},
-	}, nil
+		API: APIConfig{
+			Version:            "v1",
+			Prefix:             "/api/v1",
+			CORSAllowedOrigins: []string{"http://localhost:3000"},
+		},
+	}
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -137,4 +177,33 @@ func getEnvList(key string, defaultValue []string) []string {
 	}
 	// Split by comma and trim spaces
 	return strings.Split(value, ",")
+}
+
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		return defaultValue
+	}
+	return intValue
+}
+
+// Load loads configuration from environment variables
+func Load() (*Config, error) {
+	cfg := DefaultConfig()
+
+	// Override with environment variables if set
+	cfg.Server.Host = getEnvOrDefault("SERVER_HOST", cfg.Server.Host)
+	cfg.Server.Port = getEnvIntOrDefault("SERVER_PORT", cfg.Server.Port)
+	cfg.Database.Host = getEnvOrDefault("DB_HOST", cfg.Database.Host)
+	cfg.Database.Port = getEnvIntOrDefault("DB_PORT", cfg.Database.Port)
+	cfg.Database.User = getEnvOrDefault("DB_USER", cfg.Database.User)
+	cfg.Database.Password = getEnvOrDefault("DB_PASSWORD", cfg.Database.Password)
+	cfg.Database.DBName = getEnvOrDefault("DB_NAME", cfg.Database.DBName)
+	cfg.Database.SSLMode = getEnvOrDefault("DB_SSL_MODE", cfg.Database.SSLMode)
+
+	return cfg, nil
 }
