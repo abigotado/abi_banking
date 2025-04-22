@@ -19,10 +19,6 @@ func NewCreditRepository() *CreditRepository {
 	}
 }
 
-func (r *CreditRepository) SetDB(db *sql.DB) {
-	r.db = db
-}
-
 func (r *CreditRepository) Create(credit *models.Credit) error {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -53,9 +49,6 @@ func (r *CreditRepository) Create(credit *models.Credit) error {
 	if err != nil {
 		return err
 	}
-
-	// Set the initial remaining amount equal to the total amount
-	credit.RemainingAmount = credit.Amount
 
 	// Generate and insert payment schedule
 	schedule := models.GeneratePaymentSchedule(credit, time.Now())
@@ -115,19 +108,6 @@ func (r *CreditRepository) GetByID(id int64) (*models.Credit, error) {
 		return nil, err
 	}
 
-	// Calculate remaining amount from payment schedule
-	schedule, err := r.GetPaymentSchedule(id)
-	if err != nil {
-		return nil, err
-	}
-
-	credit.RemainingAmount = credit.Amount
-	for _, payment := range schedule {
-		if payment.Status == "PAID" {
-			credit.RemainingAmount -= payment.Amount
-		}
-	}
-
 	return credit, nil
 }
 
@@ -162,20 +142,6 @@ func (r *CreditRepository) GetByUserID(userID int64) ([]*models.Credit, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		// Calculate remaining amount from payment schedule
-		schedule, err := r.GetPaymentSchedule(credit.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		credit.RemainingAmount = credit.Amount
-		for _, payment := range schedule {
-			if payment.Status == "PAID" {
-				credit.RemainingAmount -= payment.Amount
-			}
-		}
-
 		credits = append(credits, credit)
 	}
 
@@ -292,19 +258,69 @@ func (r *CreditRepository) GetOverduePayments() ([]*models.PaymentSchedule, erro
 	return payments, nil
 }
 
+func (r *CreditRepository) UpdateRemainingAmount(creditID int64, amount float64) error {
+	query := `
+		UPDATE credits
+		SET remaining_amount = $1,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+	`
+
+	result, err := r.db.Exec(query, amount, creditID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("credit not found")
+	}
+
+	return nil
+}
+
 func (r *CreditRepository) BeginTransaction() (*sql.Tx, error) {
 	return r.db.Begin()
+}
+
+func (r *CreditRepository) UpdatePaymentSchedule(payment *models.PaymentSchedule) error {
+	query := `
+		UPDATE payment_schedules
+		SET status = $1
+		WHERE id = $2
+	`
+
+	result, err := r.db.Exec(query, payment.Status, payment.ID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("payment schedule not found")
+	}
+
+	return nil
 }
 
 func (r *CreditRepository) Update(credit *models.Credit) error {
 	query := `
 		UPDATE credits
 		SET status = $1,
+			remaining_amount = $2,
 			updated_at = CURRENT_TIMESTAMP
-		WHERE id = $2
+		WHERE id = $3
 	`
 
-	result, err := r.db.Exec(query, credit.Status, credit.ID)
+	result, err := r.db.Exec(query, credit.Status, credit.RemainingAmount, credit.ID)
 	if err != nil {
 		return err
 	}
@@ -328,10 +344,9 @@ func (r *CreditRepository) CreatePaymentSchedule(payment *models.PaymentSchedule
 			amount, principal, interest, status
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id
 	`
 
-	err := r.db.QueryRow(
+	result, err := r.db.Exec(
 		query,
 		payment.CreditID,
 		payment.PaymentNumber,
@@ -340,19 +355,8 @@ func (r *CreditRepository) CreatePaymentSchedule(payment *models.PaymentSchedule
 		payment.Principal,
 		payment.Interest,
 		payment.Status,
-	).Scan(&payment.ID)
+	)
 
-	return err
-}
-
-func (r *CreditRepository) UpdatePaymentSchedule(payment *models.PaymentSchedule) error {
-	query := `
-		UPDATE payment_schedules
-		SET status = $1
-		WHERE id = $2
-	`
-
-	result, err := r.db.Exec(query, payment.Status, payment.ID)
 	if err != nil {
 		return err
 	}
@@ -363,7 +367,7 @@ func (r *CreditRepository) UpdatePaymentSchedule(payment *models.PaymentSchedule
 	}
 
 	if rowsAffected == 0 {
-		return errors.New("payment not found")
+		return errors.New("failed to create payment schedule")
 	}
 
 	return nil

@@ -10,7 +10,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func NewRouter(cfg *config.Config, logger *logrus.Logger, h *handlers.Handlers) http.Handler {
+func NewRouter(
+	cfg *config.Config,
+	handlers *handlers.Handlers,
+	logger *logrus.Logger,
+) http.Handler {
 	router := mux.NewRouter()
 
 	// Apply global middleware
@@ -25,25 +29,39 @@ func NewRouter(cfg *config.Config, logger *logrus.Logger, h *handlers.Handlers) 
 
 	// Public routes
 	public := apiRouter.PathPrefix("/public").Subrouter()
-	public.HandleFunc("/register", h.RegisterHandler).Methods("POST")
-	public.HandleFunc("/login", h.LoginHandler).Methods("POST")
+	public.HandleFunc("/register", handlers.RegisterHandler).Methods("POST")
+	public.HandleFunc("/login", handlers.LoginHandler).Methods("POST")
 
 	// Protected routes
 	protected := apiRouter.PathPrefix("/").Subrouter()
 	protected.Use(middleware.Auth(cfg.JWT.Secret))
 
 	// Account routes
-	protected.HandleFunc("/accounts", h.CreateAccountHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}", h.GetAccountHandler).Methods("GET")
-	protected.HandleFunc("/accounts/transfer", h.TransferHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}/deposit", h.DepositHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}/withdraw", h.WithdrawHandler).Methods("POST")
+	protected.HandleFunc("/accounts", handlers.CreateAccountHandler).Methods("POST")
+	protected.HandleFunc("/accounts/{id}", handlers.GetAccountHandler).Methods("GET")
+	protected.HandleFunc("/accounts/user/{user_id}", handlers.GetUserAccountsHandler).Methods("GET")
+	protected.HandleFunc("/accounts/transfer", handlers.TransferHandler).Methods("POST")
+	protected.HandleFunc("/accounts/{id}/deposit", handlers.DepositHandler).Methods("POST")
+	protected.HandleFunc("/accounts/{id}/withdraw", handlers.WithdrawHandler).Methods("POST")
+
+	// Card routes
+	protected.HandleFunc("/cards", handlers.CreateCardHandler).Methods("POST")
+	protected.HandleFunc("/cards/{id}", handlers.GetCardHandler).Methods("GET")
+	protected.HandleFunc("/cards/user/{user_id}", handlers.GetUserCardsHandler).Methods("GET")
+	protected.HandleFunc("/cards/{id}/block", handlers.BlockCardHandler).Methods("POST")
+	protected.HandleFunc("/cards/{id}/unblock", handlers.UnblockCardHandler).Methods("POST")
+	protected.HandleFunc("/cards/{id}", handlers.DeleteCardHandler).Methods("DELETE")
 
 	// Credit routes
-	protected.HandleFunc("/credits", h.CreateCreditHandler).Methods("POST")
-	protected.HandleFunc("/credits/{id}", h.GetCreditHandler).Methods("GET")
-	protected.HandleFunc("/credits/{id}/schedule", h.GetPaymentScheduleHandler).Methods("GET")
-	protected.HandleFunc("/credits/{id}/pay", h.PayCreditHandler).Methods("POST")
+	protected.HandleFunc("/credits", handlers.CreateCreditHandler).Methods("POST")
+	protected.HandleFunc("/credits/{id}", handlers.GetCreditHandler).Methods("GET")
+	protected.HandleFunc("/credits/user/{user_id}", handlers.GetUserCreditsHandler).Methods("GET")
+	protected.HandleFunc("/credits/{id}/schedule", handlers.GetPaymentScheduleHandler).Methods("GET")
+	protected.HandleFunc("/credits/{id}/pay", handlers.PayCreditHandler).Methods("POST")
+
+	// Analytics routes
+	protected.HandleFunc("/analytics/transactions", handlers.GetTransactionAnalyticsHandler).Methods("GET")
+	protected.HandleFunc("/analytics/credits", handlers.GetCreditAnalyticsHandler).Methods("GET")
 
 	return router
 }
