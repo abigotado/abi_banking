@@ -476,3 +476,64 @@ func (h *Handlers) DeleteCardHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 }
+
+// GetTransactionAnalyticsHandler handles transaction analytics retrieval
+func (h *Handlers) GetTransactionAnalyticsHandler(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse query parameters
+	startDate := r.URL.Query().Get("start_date")
+	endDate := r.URL.Query().Get("end_date")
+
+	// Convert dates to time.Time
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		h.logger.WithError(err).Error("Invalid start date")
+		http.Error(w, "Invalid start date", http.StatusBadRequest)
+		return
+	}
+
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		h.logger.WithError(err).Error("Invalid end date")
+		http.Error(w, "Invalid end date", http.StatusBadRequest)
+		return
+	}
+
+	analytics, err := h.accountService.GetTransactionAnalytics(userID, start, end)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get transaction analytics")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analytics)
+}
+
+// GetCreditAnalyticsHandler handles credit analytics retrieval
+func (h *Handlers) GetCreditAnalyticsHandler(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	analytics, err := h.creditService.GetCreditAnalytics(userID)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get credit analytics")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analytics)
+}
