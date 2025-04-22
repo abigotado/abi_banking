@@ -37,3 +37,15 @@ type TransferRequest struct {
 	ToAccountID   int64   `json:"to_account_id" validate:"required,nefield=FromAccountID"`
 	Amount        float64 `json:"amount" validate:"required,gt=0"`
 }
+
+// DepositRequest represents a request to deposit money into an account
+type DepositRequest struct {
+	AccountID string  `json:"account_id" validate:"required"`
+	Amount    float64 `json:"amount" validate:"required,gt=0"`
+}
+
+// WithdrawRequest represents a request to withdraw money from an account
+type WithdrawRequest struct {
+	AccountID string  `json:"account_id" validate:"required"`
+	Amount    float64 `json:"amount" validate:"required,gt=0"`
+}

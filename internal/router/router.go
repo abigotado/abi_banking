@@ -6,6 +6,7 @@ import (
 	"github.com/Abigotado/abi_banking/internal/config"
 	"github.com/Abigotado/abi_banking/internal/handlers"
 	"github.com/Abigotado/abi_banking/internal/middleware"
+	"github.com/Abigotado/abi_banking/internal/models"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
@@ -22,6 +23,9 @@ func NewRouter(
 		middleware.Logging(logger),
 		middleware.Recovery(logger),
 		middleware.CORS(cfg.API.CORSAllowedOrigins),
+		middleware.RequestID(),
+		middleware.RateLimiter(cfg.RateLimit.Requests),
+		middleware.ContentType("application/json"),
 	)
 
 	// API version prefix
@@ -37,31 +41,35 @@ func NewRouter(
 	protected.Use(middleware.Auth(cfg.JWT.Secret))
 
 	// Account routes
-	protected.HandleFunc("/accounts", handlers.CreateAccountHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}", handlers.GetAccountHandler).Methods("GET")
-	protected.HandleFunc("/accounts/user/{user_id}", handlers.GetUserAccountsHandler).Methods("GET")
-	protected.HandleFunc("/accounts/transfer", handlers.TransferHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}/deposit", handlers.DepositHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}/withdraw", handlers.WithdrawHandler).Methods("POST")
+	accountRouter := protected.PathPrefix("/accounts").Subrouter()
+	accountRouter.HandleFunc("", middleware.ValidateRequest(&models.CreateAccountRequest{})(handlers.CreateAccountHandler)).Methods("POST")
+	accountRouter.HandleFunc("/{id}", handlers.GetAccountHandler).Methods("GET")
+	accountRouter.HandleFunc("/user/{user_id}", handlers.GetUserAccountsHandler).Methods("GET")
+	accountRouter.HandleFunc("/transfer", middleware.ValidateRequest(&models.TransferRequest{})(handlers.TransferHandler)).Methods("POST")
+	accountRouter.HandleFunc("/{id}/deposit", middleware.ValidateRequest(&models.DepositRequest{})(handlers.DepositHandler)).Methods("POST")
+	accountRouter.HandleFunc("/{id}/withdraw", middleware.ValidateRequest(&models.WithdrawRequest{})(handlers.WithdrawHandler)).Methods("POST")
 
 	// Card routes
-	protected.HandleFunc("/cards", handlers.CreateCardHandler).Methods("POST")
-	protected.HandleFunc("/cards/{id}", handlers.GetCardHandler).Methods("GET")
-	protected.HandleFunc("/cards/user/{user_id}", handlers.GetUserCardsHandler).Methods("GET")
-	protected.HandleFunc("/cards/{id}/block", handlers.BlockCardHandler).Methods("POST")
-	protected.HandleFunc("/cards/{id}/unblock", handlers.UnblockCardHandler).Methods("POST")
-	protected.HandleFunc("/cards/{id}", handlers.DeleteCardHandler).Methods("DELETE")
+	cardRouter := protected.PathPrefix("/cards").Subrouter()
+	cardRouter.HandleFunc("", middleware.ValidateRequest(&models.CreateCardRequest{})(handlers.CreateCardHandler)).Methods("POST")
+	cardRouter.HandleFunc("/{id}", handlers.GetCardHandler).Methods("GET")
+	cardRouter.HandleFunc("/user/{user_id}", handlers.GetUserCardsHandler).Methods("GET")
+	cardRouter.HandleFunc("/{id}/block", handlers.BlockCardHandler).Methods("POST")
+	cardRouter.HandleFunc("/{id}/unblock", handlers.UnblockCardHandler).Methods("POST")
+	cardRouter.HandleFunc("/{id}", handlers.DeleteCardHandler).Methods("DELETE")
 
 	// Credit routes
-	protected.HandleFunc("/credits", handlers.CreateCreditHandler).Methods("POST")
-	protected.HandleFunc("/credits/{id}", handlers.GetCreditHandler).Methods("GET")
-	protected.HandleFunc("/credits/user/{user_id}", handlers.GetUserCreditsHandler).Methods("GET")
-	protected.HandleFunc("/credits/{id}/schedule", handlers.GetPaymentScheduleHandler).Methods("GET")
-	protected.HandleFunc("/credits/{id}/pay", handlers.PayCreditHandler).Methods("POST")
+	creditRouter := protected.PathPrefix("/credits").Subrouter()
+	creditRouter.HandleFunc("", middleware.ValidateRequest(&models.CreateCreditRequest{})(handlers.CreateCreditHandler)).Methods("POST")
+	creditRouter.HandleFunc("/{id}", handlers.GetCreditHandler).Methods("GET")
+	creditRouter.HandleFunc("/user/{user_id}", handlers.GetUserCreditsHandler).Methods("GET")
+	creditRouter.HandleFunc("/{id}/schedule", handlers.GetPaymentScheduleHandler).Methods("GET")
+	creditRouter.HandleFunc("/{id}/pay", middleware.ValidateRequest(&models.PayCreditRequest{})(handlers.PayCreditHandler)).Methods("POST")
 
 	// Analytics routes
-	protected.HandleFunc("/analytics/transactions", handlers.GetTransactionAnalyticsHandler).Methods("GET")
-	protected.HandleFunc("/analytics/credits", handlers.GetCreditAnalyticsHandler).Methods("GET")
+	analyticsRouter := protected.PathPrefix("/analytics").Subrouter()
+	analyticsRouter.HandleFunc("/transactions", handlers.GetTransactionAnalyticsHandler).Methods("GET")
+	analyticsRouter.HandleFunc("/credits", handlers.GetCreditAnalyticsHandler).Methods("GET")
 
 	return router
 }

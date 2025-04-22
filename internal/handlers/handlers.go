@@ -8,6 +8,7 @@ import (
 
 	"github.com/Abigotado/abi_banking/internal/config"
 	"github.com/Abigotado/abi_banking/internal/database"
+	"github.com/Abigotado/abi_banking/internal/middleware"
 	"github.com/Abigotado/abi_banking/internal/models"
 	"github.com/Abigotado/abi_banking/internal/repository"
 	"github.com/Abigotado/abi_banking/internal/service"
@@ -77,14 +78,14 @@ func (h *Handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 // CreateAccountHandler handles account creation
 func (h *Handlers) CreateAccountHandler(w http.ResponseWriter, r *http.Request) {
-	var req models.CreateAccountRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.WithError(err).Error("Failed to decode request body")
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	req, ok := middleware.GetRequestBodyFromContext(r.Context()).(*models.CreateAccountRequest)
+	if !ok {
+		h.logger.Error("Failed to get request body from context")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	account, err := h.accountService.CreateAccount(&req)
+	account, err := h.accountService.CreateAccount(req)
 	if err != nil {
 		h.logger.WithError(err).Error("Failed to create account")
 		http.Error(w, err.Error(), http.StatusInternalServerError)

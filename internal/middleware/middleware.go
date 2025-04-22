@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Abigotado/abi_banking/internal/models"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -131,4 +133,101 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// RateLimiter middleware for limiting requests per IP
+func RateLimiter(requestsPerMinute int) func(http.Handler) http.Handler {
+	type client struct {
+		requests int
+		lastTime time.Time
+	}
+
+	clients := make(map[string]*client)
+	mutex := &sync.Mutex{}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := r.RemoteAddr
+			mutex.Lock()
+			c, exists := clients[ip]
+			if !exists {
+				c = &client{}
+				clients[ip] = c
+			}
+
+			// Reset counter if more than a minute has passed
+			if time.Since(c.lastTime) > time.Minute {
+				c.requests = 0
+				c.lastTime = time.Now()
+			}
+
+			if c.requests >= requestsPerMinute {
+				mutex.Unlock()
+				http.Error(w, "Too many requests", http.StatusTooManyRequests)
+				return
+			}
+
+			c.requests++
+			c.lastTime = time.Now()
+			mutex.Unlock()
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ValidateRequest middleware for validating request body
+func ValidateRequest(schema interface{}) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Body == nil {
+				http.Error(w, "Request body is required", http.StatusBadRequest)
+				return
+			}
+
+			// Create a new decoder that reads from the original body
+			decoder := json.NewDecoder(r.Body)
+			if err := decoder.Decode(schema); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			// Store the decoded schema in the context
+			ctx := context.WithValue(r.Context(), "request_body", schema)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		}
+	}
+}
+
+// GetRequestBodyFromContext retrieves the request body from context
+func GetRequestBodyFromContext(ctx context.Context) interface{} {
+	return ctx.Value("request_body")
+}
+
+// ContentType middleware for checking content type
+func ContentType(contentType string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "POST" || r.Method == "PUT" {
+				contentType := r.Header.Get("Content-Type")
+				if contentType != "application/json" {
+					http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequestID middleware for adding request ID to context
+func RequestID() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestID := uuid.New().String()
+			ctx := context.WithValue(r.Context(), "request_id", requestID)
+			w.Header().Set("X-Request-ID", requestID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
