@@ -1,0 +1,37 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "read_timeout": "15s",
+    "write_timeout": "15s",
+    "idle_timeout": "60s"
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5438,
+    "user": "postgres",
+    "password": "postgres",
+    "dbname": "abi_banking",
+    "sslmode": "disable"
+  },
+  "jwt": {
+    "secret": "your-256-bit-secret",
+    "expiration_time": "24h",
+    "refresh_duration": "168h",
+    "signing_algorithm": "HS256"
+  },
+  "log": {
+    "level": "info"
+  },
+  "rate_limit": {
+    "enabled": true,
+    "requests_per_hour": 1000,
+    "burst_size": 50,
+    "expiry_time": "1h"
+  },
+  "api": {
+    "version": "v1",
+    "prefix": "/api/v1",
+    "cors_allowed_origins": ["http://localhost:3000"]
+  }
+} 

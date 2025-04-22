@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -134,14 +135,14 @@ func DefaultConfig() *Config {
 		},
 		Database: DatabaseConfig{
 			Host:     "localhost",
-			Port:     5432,
+			Port:     5438,
 			User:     "postgres",
 			Password: "postgres",
-			DBName:   "bank",
+			DBName:   "abi_banking",
 			SSLMode:  "disable",
 		},
 		Log: LogConfig{
-			Level: "info",
+			Level: "debug",
 		},
 		JWT: JWTConfig{
 			ExpirationTime:   24 * time.Hour,
@@ -150,14 +151,14 @@ func DefaultConfig() *Config {
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:         true,
-			RequestsPerHour: 1000,
+			RequestsPerHour: 100,
 			BurstSize:       50,
 			ExpiryTime:      1 * time.Hour,
 		},
 		API: APIConfig{
 			Version:            "v1",
 			Prefix:             "/api/v1",
-			CORSAllowedOrigins: []string{"http://localhost:3000"},
+			CORSAllowedOrigins: []string{"http://localhost:3000", "http://localhost:8080"},
 		},
 	}
 }
@@ -204,6 +205,14 @@ func Load() (*Config, error) {
 	cfg.Database.Password = getEnvOrDefault("DB_PASSWORD", cfg.Database.Password)
 	cfg.Database.DBName = getEnvOrDefault("DB_NAME", cfg.Database.DBName)
 	cfg.Database.SSLMode = getEnvOrDefault("DB_SSL_MODE", cfg.Database.SSLMode)
+	cfg.App.Port = getEnvOrDefault("APP_PORT", cfg.App.Port)
+	cfg.Log.Level = getEnvOrDefault("LOG_LEVEL", cfg.Log.Level)
+	cfg.JWT.Secret = getEnvOrDefault("JWT_SECRET", cfg.JWT.Secret)
+	cfg.API.Prefix = getEnvOrDefault("API_PREFIX", cfg.API.Prefix)
+	cfg.API.CORSAllowedOrigins = getEnvList("CORS_ALLOWED_ORIGINS", cfg.API.CORSAllowedOrigins)
+
+	// Debug logging
+	fmt.Printf("Database configuration: %+v\n", cfg.Database)
 
 	return cfg, nil
 }
