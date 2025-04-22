@@ -78,8 +78,8 @@ func (s *CreditService) GetCreditAnalytics(userID int64) (*CreditAnalytics, erro
 			}
 
 			// Find the next payment
-			if payment.Status == "PENDING" && (nextPaymentDate == nil || payment.PaymentDate.Before(*nextPaymentDate)) {
-				nextPaymentDate = &payment.PaymentDate
+			if payment.Status == "PENDING" && (nextPaymentDate == nil || payment.DueDate.Before(*nextPaymentDate)) {
+				nextPaymentDate = &payment.DueDate
 				nextPaymentAmount = payment.Amount
 			}
 		}
@@ -112,7 +112,7 @@ func (s *CreditService) CreateCredit(userID int64, amount float64, termMonths in
 		RemainingAmount: amount,
 		TermMonths:      termMonths,
 		InterestRate:    interestRate,
-		Status:          models.CreditStatusActive,
+		Status:          string(models.CreditStatusActive),
 	}
 
 	// Start transaction

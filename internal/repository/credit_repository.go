@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -57,20 +56,16 @@ func (r *CreditRepository) Create(credit *models.Credit) error {
 	for _, payment := range schedule {
 		query := `
 			INSERT INTO payment_schedules (
-				credit_id, payment_number, payment_date,
-				amount, principal, interest, status
+				credit_id, amount, due_date, status
 			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			VALUES ($1, $2, $3, $4)
 		`
 
 		_, err := tx.Exec(
 			query,
 			credit.ID,
-			payment.PaymentNumber,
-			payment.PaymentDate,
 			payment.Amount,
-			payment.Principal,
-			payment.Interest,
+			payment.DueDate,
 			payment.Status,
 		)
 
@@ -189,37 +184,12 @@ func (r *CreditRepository) GetPaymentSchedule(creditID int64) ([]*models.Payment
 	return payments, nil
 }
 
-func (r *CreditRepository) UpdatePaymentStatus(paymentID int64, status string) error {
-	query := `
-		UPDATE payment_schedules
-		SET status = $1
-		WHERE id = $2
-	`
-
-	result, err := r.db.Exec(query, status, paymentID)
-	if err != nil {
-		return err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return errors.New("payment not found")
-	}
-
-	return nil
-}
-
 func (r *CreditRepository) GetOverduePayments() ([]*models.PaymentSchedule, error) {
 	query := `
-		SELECT id, credit_id, payment_number, payment_date,
-			amount, principal, interest, status
+		SELECT id, credit_id, amount, due_date, status
 		FROM payment_schedules
 		WHERE status = 'PENDING'
-		AND payment_date < CURRENT_TIMESTAMP
+		AND due_date < CURRENT_TIMESTAMP
 	`
 
 	rows, err := r.db.Query(query)
@@ -234,11 +204,8 @@ func (r *CreditRepository) GetOverduePayments() ([]*models.PaymentSchedule, erro
 		err := rows.Scan(
 			&payment.ID,
 			&payment.CreditID,
-			&payment.PaymentNumber,
-			&payment.PaymentDate,
 			&payment.Amount,
-			&payment.Principal,
-			&payment.Interest,
+			&payment.DueDate,
 			&payment.Status,
 		)
 		if err != nil {
@@ -409,15 +376,14 @@ func (r *CreditRepository) GetNextPayment(creditID int64) (*models.PaymentSchedu
 	return payment, nil
 }
 
-// UpdatePaymentStatus updates the status of a payment
-func (r *CreditRepository) UpdatePaymentStatus(ctx context.Context, paymentID int64, status string) error {
+func (r *CreditRepository) UpdatePaymentStatus(paymentID int64, status string) error {
 	query := `
 		UPDATE payment_schedules
 		SET status = $1, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $2
 	`
 
-	result, err := r.db.ExecContext(ctx, query, status, paymentID)
+	result, err := r.db.Exec(query, status, paymentID)
 	if err != nil {
 		return fmt.Errorf("failed to update payment status: %w", err)
 	}

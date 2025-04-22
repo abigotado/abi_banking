@@ -20,6 +20,8 @@ type Credit struct {
 
 // CreateCreditRequest represents a request to create a credit
 type CreateCreditRequest struct {
+	UserID       int64   `json:"user_id" validate:"required"`
+	AccountID    int64   `json:"account_id" validate:"required"`
 	Amount       float64 `json:"amount" validate:"required,gt=0"`
 	TermMonths   int     `json:"term_months" validate:"required,gt=0"`
 	InterestRate float64 `json:"interest_rate" validate:"required,gt=0"`
@@ -76,13 +78,10 @@ func GeneratePaymentSchedule(credit *Credit, startDate time.Time) []PaymentSched
 		remainingPrincipal -= principal
 
 		schedule[i] = PaymentSchedule{
-			CreditID:      credit.ID,
-			PaymentNumber: i + 1,
-			PaymentDate:   startDate.AddDate(0, i, 0),
-			Amount:        monthlyPayment,
-			Principal:     principal,
-			Interest:      interest,
-			Status:        "PENDING",
+			CreditID: credit.ID,
+			Amount:   monthlyPayment,
+			DueDate:  startDate.AddDate(0, i, 0),
+			Status:   PaymentStatusPending,
 		}
 	}
 
