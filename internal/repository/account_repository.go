@@ -111,8 +111,8 @@ func (r *AccountRepository) UpdateBalance(id int64, newBalance float64) error {
 
 func (r *AccountRepository) CreateTransaction(transaction *models.Transaction) error {
 	query := `
-		INSERT INTO transactions (from_account_id, to_account_id, amount, currency, description, transaction_type, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO transactions (from_account_id, to_account_id, amount, type, created_at)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
 	`
 	return r.db.QueryRow(
@@ -120,9 +120,7 @@ func (r *AccountRepository) CreateTransaction(transaction *models.Transaction) e
 		transaction.FromAccountID,
 		transaction.ToAccountID,
 		transaction.Amount,
-		transaction.Currency,
-		transaction.Description,
-		transaction.TransactionType,
+		transaction.Type,
 		transaction.CreatedAt,
 	).Scan(&transaction.ID)
 }
