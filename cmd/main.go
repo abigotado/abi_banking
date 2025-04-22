@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/Abigotado/abi_banking/internal/config"
 	"github.com/Abigotado/abi_banking/internal/database"
+	"github.com/Abigotado/abi_banking/internal/router"
 	"github.com/sirupsen/logrus"
 )
 
@@ -42,7 +45,7 @@ func main() {
 	// Create HTTP server
 	server := &http.Server{
 		Addr:    ":" + cfg.App.Port,
-		Handler: setupRouter(cfg, logger),
+		Handler: router.NewRouter(cfg, logger),
 	}
 
 	// Start server in a goroutine
@@ -59,7 +62,17 @@ func main() {
 	<-quit
 
 	logger.Info("Shutting down server...")
-	// TODO: Add graceful shutdown logic
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Attempt graceful shutdown
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	logger.Info("Server exiting")
 }
 
 func setupRouter(cfg *config.Config, logger *logrus.Logger) http.Handler {
