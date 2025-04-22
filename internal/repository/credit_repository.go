@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Abigotado/abi_banking/internal/database"
@@ -154,43 +156,37 @@ func (r *CreditRepository) GetByUserID(userID int64) ([]*models.Credit, error) {
 
 func (r *CreditRepository) GetPaymentSchedule(creditID int64) ([]*models.PaymentSchedule, error) {
 	query := `
-		SELECT id, credit_id, payment_number, payment_date,
-			amount, principal, interest, status
+		SELECT id, credit_id, amount, due_date, status, created_at, updated_at
 		FROM payment_schedules
 		WHERE credit_id = $1
-		ORDER BY payment_number
+		ORDER BY due_date ASC
 	`
 
 	rows, err := r.db.Query(query, creditID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query payment schedule: %w", err)
 	}
 	defer rows.Close()
 
-	var schedule []*models.PaymentSchedule
+	var payments []*models.PaymentSchedule
 	for rows.Next() {
 		payment := &models.PaymentSchedule{}
 		err := rows.Scan(
 			&payment.ID,
 			&payment.CreditID,
-			&payment.PaymentNumber,
-			&payment.PaymentDate,
 			&payment.Amount,
-			&payment.Principal,
-			&payment.Interest,
+			&payment.DueDate,
 			&payment.Status,
+			&payment.CreatedAt,
+			&payment.UpdatedAt,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan payment schedule: %w", err)
 		}
-		schedule = append(schedule, payment)
+		payments = append(payments, payment)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return schedule, nil
+	return payments, nil
 }
 
 func (r *CreditRepository) UpdatePaymentStatus(paymentID int64, status string) error {
@@ -339,35 +335,99 @@ func (r *CreditRepository) Update(credit *models.Credit) error {
 
 func (r *CreditRepository) CreatePaymentSchedule(payment *models.PaymentSchedule) error {
 	query := `
-		INSERT INTO payment_schedules (
-			credit_id, payment_number, payment_date,
-			amount, principal, interest, status
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO payment_schedules (credit_id, amount, due_date, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		RETURNING id
 	`
 
-	result, err := r.db.Exec(
+	err := r.db.QueryRow(
 		query,
 		payment.CreditID,
-		payment.PaymentNumber,
-		payment.PaymentDate,
 		payment.Amount,
-		payment.Principal,
-		payment.Interest,
+		payment.DueDate,
 		payment.Status,
+	).Scan(&payment.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create payment schedule: %w", err)
+	}
+
+	return nil
+}
+
+// GetCreditsWithDuePayments retrieves all active credits with due payments
+func (r *CreditRepository) GetCreditsWithDuePayments() ([]*models.Credit, error) {
+	query := `
+		SELECT c.id, c.user_id, c.account_id, c.amount, c.remaining_amount, c.interest_rate, 
+			c.term_months, c.status, c.created_at, c.updated_at
+		FROM credits c
+		JOIN payment_schedules ps ON c.id = ps.credit_id
+		WHERE c.status = $1 AND ps.status = $2 AND ps.due_date <= CURRENT_DATE
+		GROUP BY c.id
+	`
+
+	rows, err := r.db.Query(query, models.CreditStatusActive, models.PaymentStatusPending)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query credits: %w", err)
+	}
+	defer rows.Close()
+
+	var credits []*models.Credit
+	for rows.Next() {
+		credit := &models.Credit{}
+		err := rows.Scan(
+			&credit.ID, &credit.UserID, &credit.AccountID, &credit.Amount, &credit.RemainingAmount,
+			&credit.InterestRate, &credit.TermMonths, &credit.Status, &credit.CreatedAt, &credit.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan credit: %w", err)
+		}
+		credits = append(credits, credit)
+	}
+
+	return credits, nil
+}
+
+// GetNextPayment retrieves the next due payment for a credit
+func (r *CreditRepository) GetNextPayment(creditID int64) (*models.PaymentSchedule, error) {
+	query := `
+		SELECT id, credit_id, amount, due_date, status, created_at, updated_at
+		FROM payment_schedules
+		WHERE credit_id = $1 AND status = $2 AND due_date <= CURRENT_DATE
+		ORDER BY due_date ASC
+		LIMIT 1
+	`
+
+	payment := &models.PaymentSchedule{}
+	err := r.db.QueryRow(query, creditID, models.PaymentStatusPending).Scan(
+		&payment.ID, &payment.CreditID, &payment.Amount, &payment.DueDate,
+		&payment.Status, &payment.CreatedAt, &payment.UpdatedAt,
 	)
-
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to get next payment: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
+	return payment, nil
+}
+
+// UpdatePaymentStatus updates the status of a payment
+func (r *CreditRepository) UpdatePaymentStatus(ctx context.Context, paymentID int64, status string) error {
+	query := `
+		UPDATE payment_schedules
+		SET status = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+	`
+
+	result, err := r.db.ExecContext(ctx, query, status, paymentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to update payment status: %w", err)
 	}
 
-	if rowsAffected == 0 {
-		return errors.New("failed to create payment schedule")
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("payment not found")
 	}
 
 	return nil

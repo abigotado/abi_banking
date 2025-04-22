@@ -157,22 +157,35 @@ func (h *Handlers) TransferHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// CreateCreditHandler handles credit creation
+// CreateCreditHandler handles credit creation requests
 func (h *Handlers) CreateCreditHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateCreditRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.WithError(err).Error("Failed to decode request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	credit, err := h.creditService.CreateCredit(&req)
-	if err != nil {
-		h.logger.WithError(err).Error("Failed to create credit")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
+	// Create credit
+	credit, err := h.creditService.CreateCredit(
+		userID,
+		req.Amount,
+		req.TermMonths,
+		req.InterestRate,
+	)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to create credit")
+		http.Error(w, "Failed to create credit", http.StatusInternalServerError)
+		return
+	}
+
+	// Return response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(credit)

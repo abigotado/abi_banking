@@ -1,6 +1,7 @@
 package service
 
 import (
+	"math"
 	"time"
 
 	"errors"
@@ -102,36 +103,45 @@ func (s *CreditService) GetCreditAnalytics(userID int64) (*CreditAnalytics, erro
 	}, nil
 }
 
-// CreateCredit creates a new credit for a user
-func (s *CreditService) CreateCredit(req *models.CreateCreditRequest) (*models.Credit, error) {
-	// Validate input
-	if req.Amount <= 0 {
-		return nil, errors.New("invalid credit amount")
+// CreateCredit creates a new credit
+func (s *CreditService) CreateCredit(userID int64, amount float64, termMonths int, interestRate float64) (*models.Credit, error) {
+	// Create credit record
+	credit := &models.Credit{
+		UserID:          userID,
+		Amount:          amount,
+		RemainingAmount: amount,
+		TermMonths:      termMonths,
+		InterestRate:    interestRate,
+		Status:          models.CreditStatusActive,
 	}
-	if req.TermMonths <= 0 {
-		return nil, errors.New("invalid credit term")
+
+	// Start transaction
+	tx, err := s.creditRepo.BeginTransaction()
+	if err != nil {
+		return nil, err
 	}
-	if req.InterestRate <= 0 {
-		return nil, errors.New("invalid interest rate")
-	}
+	defer tx.Rollback()
 
 	// Create credit
-	credit := &models.Credit{
-		UserID:          req.UserID,
-		AccountID:       req.AccountID,
-		Amount:          req.Amount,
-		TermMonths:      req.TermMonths,
-		InterestRate:    req.InterestRate,
-		Status:          "ACTIVE",
-		RemainingAmount: req.Amount,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+	if err := s.creditRepo.Create(credit); err != nil {
+		return nil, err
 	}
 
-	// Save credit to database
-	err := s.creditRepo.Create(credit)
+	// Generate payment schedule
+	schedule, err := s.GeneratePaymentSchedule(credit)
 	if err != nil {
-		s.logger.WithError(err).Error("Failed to create credit")
+		return nil, err
+	}
+
+	// Save payment schedule
+	for _, payment := range schedule {
+		if err := s.creditRepo.CreatePaymentSchedule(payment); err != nil {
+			return nil, err
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -214,4 +224,39 @@ func (s *CreditService) PayCredit(creditID int64, req *models.PayCreditRequest) 
 	}
 
 	return nil
+}
+
+// GeneratePaymentSchedule generates a payment schedule for a credit
+func (s *CreditService) GeneratePaymentSchedule(credit *models.Credit) ([]*models.PaymentSchedule, error) {
+	// Calculate monthly payment using annuity formula
+	monthlyRate := credit.InterestRate / 12 / 100
+	monthlyPayment := credit.Amount * (monthlyRate * math.Pow(1+monthlyRate, float64(credit.TermMonths))) / (math.Pow(1+monthlyRate, float64(credit.TermMonths)) - 1)
+
+	// Generate schedule
+	var schedule []*models.PaymentSchedule
+	remainingAmount := credit.Amount
+	dueDate := time.Now().AddDate(0, 1, 0) // First payment due in 1 month
+
+	for i := 0; i < credit.TermMonths; i++ {
+		// Calculate interest for this period
+		interest := remainingAmount * monthlyRate
+		principal := monthlyPayment - interest
+
+		// Create payment entry
+		payment := &models.PaymentSchedule{
+			CreditID: credit.ID,
+			Amount:   monthlyPayment,
+			DueDate:  dueDate,
+			Status:   models.PaymentStatusPending,
+		}
+
+		// Add to schedule
+		schedule = append(schedule, payment)
+
+		// Update for next period
+		remainingAmount -= principal
+		dueDate = dueDate.AddDate(0, 1, 0)
+	}
+
+	return schedule, nil
 }
