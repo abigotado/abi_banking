@@ -16,14 +16,22 @@ type Handlers struct {
 	userService    *service.UserService
 	accountService *service.AccountService
 	creditService  *service.CreditService
+	cardService    *service.CardService
 	logger         *logrus.Logger
 }
 
-func NewHandlers(userService *service.UserService, accountService *service.AccountService, creditService *service.CreditService, logger *logrus.Logger) *Handlers {
+func NewHandlers(
+	userService *service.UserService,
+	accountService *service.AccountService,
+	creditService *service.CreditService,
+	cardService *service.CardService,
+	logger *logrus.Logger,
+) *Handlers {
 	return &Handlers{
 		userService:    userService,
 		accountService: accountService,
 		creditService:  creditService,
+		cardService:    cardService,
 		logger:         logger,
 	}
 }
@@ -296,6 +304,172 @@ func (h *Handlers) WithdrawHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.accountService.Withdraw(req.AccountID, req.Amount); err != nil {
 		h.logger.WithError(err).Error("Failed to withdraw money")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// CreateCardHandler handles card creation
+func (h *Handlers) CreateCardHandler(w http.ResponseWriter, r *http.Request) {
+	var req models.CreateCardRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.WithError(err).Error("Failed to decode request body")
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get user ID from context (assuming it's set by auth middleware)
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	card, err := h.cardService.CreateCard(userID, &req)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to create card")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(card.ToResponse())
+}
+
+// GetCardHandler handles card retrieval
+func (h *Handlers) GetCardHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	cardID, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.logger.WithError(err).Error("Invalid card ID")
+		http.Error(w, "Invalid card ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	card, err := h.cardService.GetCard(userID, cardID)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get card")
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(card.ToResponse())
+}
+
+// GetUserCardsHandler handles user cards retrieval
+func (h *Handlers) GetUserCardsHandler(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	cards, err := h.cardService.GetUserCards(userID)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get user cards")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert cards to responses
+	responses := make([]*models.CardResponse, len(cards))
+	for i, card := range cards {
+		responses[i] = card.ToResponse()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(responses)
+}
+
+// BlockCardHandler handles card blocking
+func (h *Handlers) BlockCardHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	cardID, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.logger.WithError(err).Error("Invalid card ID")
+		http.Error(w, "Invalid card ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.cardService.BlockCard(userID, cardID); err != nil {
+		h.logger.WithError(err).Error("Failed to block card")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// UnblockCardHandler handles card unblocking
+func (h *Handlers) UnblockCardHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	cardID, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.logger.WithError(err).Error("Invalid card ID")
+		http.Error(w, "Invalid card ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.cardService.UnblockCard(userID, cardID); err != nil {
+		h.logger.WithError(err).Error("Failed to unblock card")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// DeleteCardHandler handles card deletion
+func (h *Handlers) DeleteCardHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	cardID, err := strconv.ParseInt(vars["id"], 10, 64)
+	if err != nil {
+		h.logger.WithError(err).Error("Invalid card ID")
+		http.Error(w, "Invalid card ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get user ID from context
+	userID, ok := r.Context().Value("user_id").(int64)
+	if !ok {
+		h.logger.Error("User ID not found in context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.cardService.DeleteCard(userID, cardID); err != nil {
+		h.logger.WithError(err).Error("Failed to delete card")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
