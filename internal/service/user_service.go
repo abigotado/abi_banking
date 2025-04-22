@@ -15,9 +15,9 @@ type UserService struct {
 	logger   *logrus.Logger
 }
 
-func NewUserService(logger *logrus.Logger) *UserService {
+func NewUserService(userRepo *repository.UserRepository, logger *logrus.Logger) *UserService {
 	return &UserService{
-		userRepo: repository.NewUserRepository(),
+		userRepo: userRepo,
 		logger:   logger,
 	}
 }
@@ -29,7 +29,7 @@ type RegisterRequest struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
+	Username string `json:"username" validate:"required,min=3,max=50"`
 	Password string `json:"password" validate:"required"`
 }
 
@@ -37,7 +37,7 @@ type LoginResponse struct {
 	Token string `json:"token"`
 }
 
-func (s *UserService) Register(req *RegisterRequest) error {
+func (s *UserService) Register(req *models.RegisterRequest) error {
 	// Check if email exists
 	emailExists, err := s.userRepo.CheckEmailExists(req.Email)
 	if err != nil {
@@ -82,11 +82,11 @@ func (s *UserService) Register(req *RegisterRequest) error {
 	return nil
 }
 
-func (s *UserService) Login(req *LoginRequest) (*LoginResponse, error) {
-	// Get user by email
-	user, err := s.userRepo.GetByEmail(req.Email)
+func (s *UserService) Login(req *models.LoginRequest) (*LoginResponse, error) {
+	// Get user by username
+	user, err := s.userRepo.GetByUsername(req.Username)
 	if err != nil {
-		s.logger.WithError(err).Error("Failed to get user by email")
+		s.logger.WithError(err).Error("Failed to get user by username")
 		return nil, errors.New("invalid credentials")
 	}
 

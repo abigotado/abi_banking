@@ -93,6 +93,33 @@ func (r *UserRepository) GetByEmail(email string) (*models.User, error) {
 	return user, nil
 }
 
+func (r *UserRepository) GetByUsername(username string) (*models.User, error) {
+	user := &models.User{}
+	query := `
+		SELECT id, username, email, password, created_at, updated_at
+		FROM users
+		WHERE username = $1
+	`
+
+	err := r.db.QueryRow(query, username).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.Password,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("user not found")
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
 func (r *UserRepository) CheckEmailExists(email string) (bool, error) {
 	var exists bool
 	query := `
@@ -123,4 +150,8 @@ func (r *UserRepository) CheckUsernameExists(username string) (bool, error) {
 	}
 
 	return exists, nil
+}
+
+func (r *UserRepository) SetDB(db *sql.DB) {
+	r.db = db
 }
