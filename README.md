@@ -1,99 +1,167 @@
-# Banking Service REST API
+# ABI Banking
 
-A secure and efficient banking service REST API built with Go.
+ABI Banking - это современная банковская система, разработанная с использованием Go и PostgreSQL. Система предоставляет полный набор банковских услуг, включая управление счетами, кредитами, картами и аналитикой.
 
-## Features
+## Основные возможности
 
-- User registration and authentication with JWT
-- Bank account management
-- Card operations (generation, viewing, payments)
-- Money transfers between accounts
-- Credit operations with payment schedules
-- Financial analytics
-- Integration with external services (Central Bank of Russia, SMTP)
-- Secure data encryption and hashing
+### Управление пользователями
+- Регистрация и аутентификация пользователей
+- Управление профилем пользователя
+- Безопасное хранение данных
 
-## Prerequisites
+### Управление счетами
+- Создание и управление банковскими счетами
+- Переводы между счетами
+- Вклады и снятия средств
+- Поддержка различных валют
 
-- Go 1.23+
-- PostgreSQL 17
-- PGP encryption tools
+### Кредитные операции
+- Создание кредитных продуктов
+- Управление кредитами
+- Платежные графики
+- Автоматический расчет процентов
+- Отслеживание статуса кредита
 
-## Installation
+### Управление картами
+- Выпуск банковских карт
+- Блокировка/разблокировка карт
+- Управление статусом карт
+- Безопасное хранение данных карт
 
-1. Clone the repository:
+### Аналитика
+- Анализ транзакций
+- Кредитная аналитика
+- Статистика по счетам
+- Отчеты по операциям
+
+## Технологический стек
+
+- **Backend**: Go
+- **База данных**: PostgreSQL
+- **Логирование**: Logrus
+- **Маршрутизация**: Gorilla Mux
+- **Аутентификация**: JWT
+
+## Структура проекта
+
+```
+abi_banking/
+├── cmd/                    # Точка входа приложения
+├── internal/              # Внутренние пакеты
+│   ├── config/           # Конфигурация приложения
+│   ├── database/         # Работа с базой данных
+│   ├── handlers/         # HTTP обработчики
+│   ├── middleware/       # Промежуточное ПО
+│   ├── models/           # Модели данных
+│   ├── repository/       # Репозитории для работы с БД
+│   ├── router/           # Маршрутизация
+│   └── service/          # Бизнес-логика
+├── migrations/           # Миграции базы данных
+└── pkg/                  # Публичные пакеты
+```
+
+## Требования
+
+- Go 1.21 или выше
+- PostgreSQL 15 или выше
+- Docker (опционально, для разработки)
+
+## Установка и запуск
+
+1. Клонируйте репозиторий:
 ```bash
 git clone https://github.com/Abigotado/abi_banking.git
 cd abi_banking
 ```
 
-2. Install dependencies:
+2. Установите зависимости:
 ```bash
 go mod download
 ```
 
-3. Set up environment variables:
+3. Настройте базу данных:
 ```bash
-cp .env.example .env
-# Edit .env with your configuration
+# Создайте базу данных PostgreSQL
+createdb abi_banking
+
+# Примените миграции
+go run cmd/migrate/main.go
 ```
 
-4. Initialize the database:
-```bash
-psql -U your_user -d your_database -f migrations/init.sql
-```
-
-## Configuration
-
-Create a `.env` file with the following variables:
-
-```env
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=your_user
-DB_PASSWORD=your_password
-DB_NAME=your_database
-JWT_SECRET=your_jwt_secret
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=your_email
-SMTP_PASSWORD=your_password
-```
-
-## API Endpoints
-
-### Public Endpoints
-- `POST /register` - User registration
-- `POST /login` - User authentication
-
-### Protected Endpoints
-- `POST /accounts` - Create account
-- `POST /cards` - Issue card
-- `POST /transfer` - Transfer funds
-- `GET /analytics` - Get analytics
-- `GET /credits/{creditId}/schedule` - Get credit payment schedule
-- `GET /accounts/{accountId}/predict` - Get balance prediction
-
-## Security Features
-
-- JWT-based authentication
-- PGP encryption for card data
-- HMAC for data integrity
-- Bcrypt for password hashing
-- Access control for accounts and cards
-
-## Running the Application
-
+4. Запустите приложение:
 ```bash
 go run cmd/main.go
 ```
 
-## Testing
+## Конфигурация
 
-```bash
-go test ./...
+Основные настройки приложения находятся в файле `config.yaml`:
+
+```yaml
+app:
+  port: "8080"
+  env: "development"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  name: "abi_banking"
+  ssl_mode: "disable"
+
+log:
+  level: "info"
 ```
 
-## License
+## API Документация
 
-MIT 
+### Пользователи
+- `POST /api/v1/users/register` - Регистрация пользователя
+- `POST /api/v1/users/login` - Вход в систему
+
+### Счета
+- `POST /api/v1/accounts` - Создание счета
+- `GET /api/v1/accounts/{id}` - Получение счета
+- `GET /api/v1/users/{id}/accounts` - Получение счетов пользователя
+- `POST /api/v1/accounts/transfer` - Перевод между счетами
+
+### Кредиты
+- `POST /api/v1/credits` - Создание кредита
+- `GET /api/v1/credits/{id}` - Получение кредита
+- `GET /api/v1/users/{id}/credits` - Получение кредитов пользователя
+- `POST /api/v1/credits/{id}/pay` - Оплата кредита
+
+### Карты
+- `POST /api/v1/cards` - Создание карты
+- `GET /api/v1/cards/{id}` - Получение карты
+- `GET /api/v1/users/{id}/cards` - Получение карт пользователя
+- `POST /api/v1/cards/{id}/block` - Блокировка карты
+- `POST /api/v1/cards/{id}/unblock` - Разблокировка карты
+
+## Безопасность
+
+- Все пароли хешируются с использованием bcrypt
+- Данные карт шифруются
+- Используется JWT для аутентификации
+- Все API эндпоинты защищены middleware
+
+## Разработка
+
+### Стиль кода
+- Следуйте стандартным соглашениям Go
+- Используйте gofmt для форматирования кода
+- Пишите тесты для нового функционала
+
+### Тестирование
+```bash
+# Запуск всех тестов
+go test ./...
+
+# Запуск тестов с покрытием
+go test -cover ./...
+```
+
+## Лицензия
+
+MIT License 
