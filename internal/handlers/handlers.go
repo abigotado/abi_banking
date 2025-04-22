@@ -30,7 +30,7 @@ func NewHandlers(userService *service.UserService, accountService *service.Accou
 
 // RegisterHandler handles user registration
 func (h *Handlers) RegisterHandler(w http.ResponseWriter, r *http.Request) {
-	var req models.RegisterRequest
+	var req service.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.WithError(err).Error("Failed to decode request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -48,7 +48,7 @@ func (h *Handlers) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 // LoginHandler handles user login
 func (h *Handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
-	var req models.LoginRequest
+	var req service.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.WithError(err).Error("Failed to decode request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)

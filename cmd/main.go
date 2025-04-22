@@ -11,7 +11,10 @@ import (
 
 	"github.com/Abigotado/abi_banking/internal/config"
 	"github.com/Abigotado/abi_banking/internal/database"
+	"github.com/Abigotado/abi_banking/internal/handlers"
+	"github.com/Abigotado/abi_banking/internal/repository"
 	"github.com/Abigotado/abi_banking/internal/router"
+	"github.com/Abigotado/abi_banking/internal/service"
 	"github.com/sirupsen/logrus"
 )
 
@@ -42,10 +45,18 @@ func main() {
 	}
 	defer database.CloseDB()
 
+	// Initialize services
+	userService := service.NewUserService(logger)
+	accountService := service.NewAccountService(logger)
+	creditService := service.NewCreditService(repository.NewCreditRepository(), accountService)
+
+	// Initialize handlers
+	h := handlers.NewHandlers(userService, accountService, creditService, logger)
+
 	// Create HTTP server
 	server := &http.Server{
 		Addr:    ":" + cfg.App.Port,
-		Handler: router.NewRouter(cfg, logger),
+		Handler: router.NewRouter(cfg, logger, h),
 	}
 
 	// Start server in a goroutine
