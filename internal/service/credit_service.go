@@ -3,6 +3,9 @@ package service
 import (
 	"time"
 
+	"errors"
+
+	"github.com/Abigotado/abi_banking/internal/models"
 	"github.com/Abigotado/abi_banking/internal/repository"
 	"github.com/sirupsen/logrus"
 )
@@ -97,4 +100,118 @@ func (s *CreditService) GetCreditAnalytics(userID int64) (*CreditAnalytics, erro
 		NextPaymentDate:   nextPaymentDate,
 		NextPaymentAmount: nextPaymentAmount,
 	}, nil
+}
+
+// CreateCredit creates a new credit for a user
+func (s *CreditService) CreateCredit(req *models.CreateCreditRequest) (*models.Credit, error) {
+	// Validate input
+	if req.Amount <= 0 {
+		return nil, errors.New("invalid credit amount")
+	}
+	if req.TermMonths <= 0 {
+		return nil, errors.New("invalid credit term")
+	}
+	if req.InterestRate <= 0 {
+		return nil, errors.New("invalid interest rate")
+	}
+
+	// Create credit
+	credit := &models.Credit{
+		UserID:          req.UserID,
+		AccountID:       req.AccountID,
+		Amount:          req.Amount,
+		TermMonths:      req.TermMonths,
+		InterestRate:    req.InterestRate,
+		Status:          "ACTIVE",
+		RemainingAmount: req.Amount,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	// Save credit to database
+	err := s.creditRepo.Create(credit)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to create credit")
+		return nil, err
+	}
+
+	return credit, nil
+}
+
+// GetCreditByID retrieves a credit by its ID
+func (s *CreditService) GetCreditByID(creditID int64) (*models.Credit, error) {
+	credit, err := s.creditRepo.GetByID(creditID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get credit by ID")
+		return nil, err
+	}
+	return credit, nil
+}
+
+// GetCreditsByUserID retrieves all credits for a user
+func (s *CreditService) GetCreditsByUserID(userID int64) ([]*models.Credit, error) {
+	credits, err := s.creditRepo.GetByUserID(userID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get user credits")
+		return nil, err
+	}
+	return credits, nil
+}
+
+// PayCredit processes a credit payment
+func (s *CreditService) PayCredit(creditID int64, req *models.PayCreditRequest) error {
+	// Get credit
+	credit, err := s.creditRepo.GetByID(creditID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get credit")
+		return err
+	}
+
+	// Validate payment amount
+	if req.Amount <= 0 {
+		return errors.New("invalid payment amount")
+	}
+	if req.Amount > credit.RemainingAmount {
+		return errors.New("payment amount exceeds remaining credit amount")
+	}
+
+	// Update remaining amount
+	newRemainingAmount := credit.RemainingAmount - req.Amount
+	err = s.creditRepo.UpdateRemainingAmount(creditID, newRemainingAmount)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to update credit remaining amount")
+		return err
+	}
+
+	// Update payment schedule
+	schedule, err := s.creditRepo.GetPaymentSchedule(creditID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get payment schedule")
+		return err
+	}
+
+	// Find and update the next pending payment
+	for _, payment := range schedule {
+		if payment.Status == "PENDING" {
+			if req.Amount >= payment.Amount {
+				// Full payment
+				err = s.creditRepo.UpdatePaymentStatus(payment.ID, "PAID")
+				if err != nil {
+					s.logger.WithError(err).Error("Failed to update payment status")
+					return err
+				}
+				req.Amount -= payment.Amount
+			} else {
+				// Partial payment - update the payment amount
+				err = s.creditRepo.UpdatePaymentStatus(payment.ID, "PARTIAL")
+				if err != nil {
+					s.logger.WithError(err).Error("Failed to update payment status")
+					return err
+				}
+				break
+			}
+		}
+	}
+
+	return nil
 }

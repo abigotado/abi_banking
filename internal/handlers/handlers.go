@@ -6,7 +6,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Abigotado/abi_banking/internal/config"
+	"github.com/Abigotado/abi_banking/internal/database"
 	"github.com/Abigotado/abi_banking/internal/models"
+	"github.com/Abigotado/abi_banking/internal/repository"
 	"github.com/Abigotado/abi_banking/internal/service"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
@@ -20,25 +23,23 @@ type Handlers struct {
 	logger         *logrus.Logger
 }
 
-func NewHandlers(
-	userService *service.UserService,
-	accountService *service.AccountService,
-	creditService *service.CreditService,
-	cardService *service.CardService,
-	logger *logrus.Logger,
-) *Handlers {
+func New(cfg *config.Config, logger *logrus.Logger) *Handlers {
+	creditRepo := repository.NewCreditRepository()
+	cardRepo := repository.NewCardRepository(database.DB, logger)
+	accountRepo := repository.NewAccountRepository()
+
 	return &Handlers{
-		userService:    userService,
-		accountService: accountService,
-		creditService:  creditService,
-		cardService:    cardService,
+		userService:    service.NewUserService(logger),
+		accountService: service.NewAccountService(logger),
+		creditService:  service.NewCreditService(creditRepo, logger),
+		cardService:    service.NewCardService(cardRepo, accountRepo, logger),
 		logger:         logger,
 	}
 }
 
 // RegisterHandler handles user registration
 func (h *Handlers) RegisterHandler(w http.ResponseWriter, r *http.Request) {
-	var req models.RegisterRequest
+	var req service.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.WithError(err).Error("Failed to decode request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -56,7 +57,7 @@ func (h *Handlers) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 // LoginHandler handles user login
 func (h *Handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
-	var req models.LoginRequest
+	var req service.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.WithError(err).Error("Failed to decode request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)

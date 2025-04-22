@@ -257,3 +257,118 @@ func (r *CreditRepository) GetOverduePayments() ([]*models.PaymentSchedule, erro
 
 	return payments, nil
 }
+
+func (r *CreditRepository) UpdateRemainingAmount(creditID int64, amount float64) error {
+	query := `
+		UPDATE credits
+		SET remaining_amount = $1,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+	`
+
+	result, err := r.db.Exec(query, amount, creditID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("credit not found")
+	}
+
+	return nil
+}
+
+func (r *CreditRepository) BeginTransaction() (*sql.Tx, error) {
+	return r.db.Begin()
+}
+
+func (r *CreditRepository) UpdatePaymentSchedule(payment *models.PaymentSchedule) error {
+	query := `
+		UPDATE payment_schedules
+		SET status = $1
+		WHERE id = $2
+	`
+
+	result, err := r.db.Exec(query, payment.Status, payment.ID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("payment schedule not found")
+	}
+
+	return nil
+}
+
+func (r *CreditRepository) Update(credit *models.Credit) error {
+	query := `
+		UPDATE credits
+		SET status = $1,
+			remaining_amount = $2,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3
+	`
+
+	result, err := r.db.Exec(query, credit.Status, credit.RemainingAmount, credit.ID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("credit not found")
+	}
+
+	return nil
+}
+
+func (r *CreditRepository) CreatePaymentSchedule(payment *models.PaymentSchedule) error {
+	query := `
+		INSERT INTO payment_schedules (
+			credit_id, payment_number, payment_date,
+			amount, principal, interest, status
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+
+	result, err := r.db.Exec(
+		query,
+		payment.CreditID,
+		payment.PaymentNumber,
+		payment.PaymentDate,
+		payment.Amount,
+		payment.Principal,
+		payment.Interest,
+		payment.Status,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("failed to create payment schedule")
+	}
+
+	return nil
+}

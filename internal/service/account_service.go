@@ -212,7 +212,7 @@ func (s *AccountService) CreateCredit(req *models.CreateCreditRequest) (*models.
 	schedule := models.GeneratePaymentSchedule(credit, time.Now())
 	for _, payment := range schedule {
 		payment.CreditID = credit.ID
-		if err := s.creditRepo.CreatePaymentSchedule(payment); err != nil {
+		if err := s.creditRepo.CreatePaymentSchedule(&payment); err != nil {
 			s.logger.WithError(err).Error("Failed to create payment schedule")
 			return nil, errors.New("internal server error")
 		}
@@ -304,4 +304,69 @@ func (s *AccountService) PayCredit(creditID int64, amount float64) error {
 	}
 
 	return nil
+}
+
+// TransactionAnalytics represents transaction analytics data
+type TransactionAnalytics struct {
+	TotalTransactions int            `json:"total_transactions"`
+	TotalAmount       float64        `json:"total_amount"`
+	AverageAmount     float64        `json:"average_amount"`
+	MaxAmount         float64        `json:"max_amount"`
+	MinAmount         float64        `json:"min_amount"`
+	TransactionsByDay map[string]int `json:"transactions_by_day"`
+}
+
+// GetTransactionAnalytics retrieves transaction analytics for a user
+func (s *AccountService) GetTransactionAnalytics(userID int64, startDate, endDate time.Time) (*TransactionAnalytics, error) {
+	// Get user accounts
+	accounts, err := s.accountRepo.GetByUserID(userID)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get user accounts")
+		return nil, err
+	}
+
+	// Get transactions for each account
+	var totalTransactions int
+	var totalAmount float64
+	var maxAmount float64
+	var minAmount float64
+	transactionsByDay := make(map[string]int)
+
+	for _, account := range accounts {
+		transactions, err := s.accountRepo.GetTransactions(account.ID, startDate, endDate)
+		if err != nil {
+			s.logger.WithError(err).Error("Failed to get account transactions")
+			return nil, err
+		}
+
+		totalTransactions += len(transactions)
+		for _, tx := range transactions {
+			totalAmount += tx.Amount
+			if tx.Amount > maxAmount {
+				maxAmount = tx.Amount
+			}
+			if tx.Amount < minAmount || minAmount == 0 {
+				minAmount = tx.Amount
+			}
+
+			// Count transactions by day
+			day := tx.CreatedAt.Format("2006-01-02")
+			transactionsByDay[day]++
+		}
+	}
+
+	// Calculate average amount
+	var averageAmount float64
+	if totalTransactions > 0 {
+		averageAmount = totalAmount / float64(totalTransactions)
+	}
+
+	return &TransactionAnalytics{
+		TotalTransactions: totalTransactions,
+		TotalAmount:       totalAmount,
+		AverageAmount:     averageAmount,
+		MaxAmount:         maxAmount,
+		MinAmount:         minAmount,
+		TransactionsByDay: transactionsByDay,
+	}, nil
 }
