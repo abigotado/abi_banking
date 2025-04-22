@@ -1,57 +1,53 @@
 package router
 
 import (
+	"log"
 	"net/http"
 
-	"github.com/Abigotado/abi_banking/internal/config"
+	"github.com/Abigotado/abi_banking/internal/handlers"
 	"github.com/Abigotado/abi_banking/internal/middleware"
+	"github.com/Abigotado/abi_banking/internal/service"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
 
-func NewRouter(cfg *config.Config, logger *logrus.Logger) http.Handler {
+// NewRouter creates a new router with all routes configured
+func NewRouter(userService *service.UserService, accountService *service.AccountService, creditService *service.CreditService, logger *logrus.Logger) *mux.Router {
 	router := mux.NewRouter()
 
-	// Apply global middleware
-	router.Use(
-		middleware.Logging(logger),
-		middleware.Recovery(logger),
-		middleware.CORS(cfg.API.CORSAllowedOrigins),
-	)
-
-	// API version prefix
-	apiRouter := router.PathPrefix(cfg.API.Prefix).Subrouter()
+	// Create handlers instance
+	h := handlers.NewHandlers(userService, accountService, creditService, logger)
 
 	// Public routes
-	public := apiRouter.PathPrefix("/public").Subrouter()
-	public.HandleFunc("/register", registerHandler).Methods("POST")
-	public.HandleFunc("/login", loginHandler).Methods("POST")
+	router.HandleFunc("/register", h.RegisterHandler).Methods("POST")
+	router.HandleFunc("/login", h.LoginHandler).Methods("POST")
 
 	// Protected routes
-	protected := apiRouter.PathPrefix("/").Subrouter()
-	protected.Use(middleware.Auth(cfg.JWT.Secret))
+	protected := router.PathPrefix("/api").Subrouter()
+	protected.Use(middleware.AuthMiddleware)
 
 	// Account routes
-	protected.HandleFunc("/accounts", createAccountHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}", getAccountHandler).Methods("GET")
-	protected.HandleFunc("/accounts/transfer", transferHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}/deposit", depositHandler).Methods("POST")
-	protected.HandleFunc("/accounts/{id}/withdraw", withdrawHandler).Methods("POST")
-
-	// Card routes
-	protected.HandleFunc("/cards", createCardHandler).Methods("POST")
-	protected.HandleFunc("/cards/{id}", getCardHandler).Methods("GET")
-	protected.HandleFunc("/cards/{id}/block", blockCardHandler).Methods("POST")
+	protected.HandleFunc("/accounts", h.CreateAccountHandler).Methods("POST")
+	protected.HandleFunc("/accounts/{id}", h.GetAccountHandler).Methods("GET")
+	protected.HandleFunc("/accounts/user/{userID}", h.GetUserAccountsHandler).Methods("GET")
+	protected.HandleFunc("/accounts/transfer", h.TransferHandler).Methods("POST")
+	protected.HandleFunc("/accounts/deposit", h.DepositHandler).Methods("POST")
+	protected.HandleFunc("/accounts/withdraw", h.WithdrawHandler).Methods("POST")
 
 	// Credit routes
-	protected.HandleFunc("/credits", createCreditHandler).Methods("POST")
-	protected.HandleFunc("/credits/{id}", getCreditHandler).Methods("GET")
-	protected.HandleFunc("/credits/{id}/schedule", getCreditScheduleHandler).Methods("GET")
-	protected.HandleFunc("/credits/{id}/pay", payCreditHandler).Methods("POST")
+	protected.HandleFunc("/credits", h.CreateCreditHandler).Methods("POST")
+	protected.HandleFunc("/credits/{id}", h.GetCreditHandler).Methods("GET")
+	protected.HandleFunc("/credits/user/{userID}", h.GetUserCreditsHandler).Methods("GET")
+	protected.HandleFunc("/credits/{id}/pay", h.PayCreditHandler).Methods("POST")
+	protected.HandleFunc("/credits/{id}/schedule", h.GetPaymentScheduleHandler).Methods("GET")
 
-	// Analytics routes
-	protected.HandleFunc("/analytics/transactions", getTransactionAnalyticsHandler).Methods("GET")
-	protected.HandleFunc("/analytics/credits", getCreditAnalyticsHandler).Methods("GET")
+	// Log all requests
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("%s %s %s", r.RemoteAddr, r.Method, r.URL)
+			next.ServeHTTP(w, r)
+		})
+	})
 
 	return router
 }
